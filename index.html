@@ -168,10 +168,53 @@
       font-size: 16px;
       font-weight: 700;
       color: #e8eaf6;
-      margin-bottom: 20px;
+      margin-bottom: 0;
       display: flex;
       align-items: center;
       gap: 8px;
+    }
+
+    /* Toggle button */
+    .btn-toggle {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, #3f51b5, #5c6bc0);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 1px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+    }
+    .btn-toggle:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(63,81,181,0.4);
+    }
+    .btn-toggle:active { transform: translateY(0); }
+    .btn-toggle .arrow {
+      display: inline-block;
+      transition: transform 0.3s;
+      font-size: 12px;
+    }
+    .btn-toggle.expanded .arrow {
+      transform: rotate(180deg);
+    }
+
+    /* Collapsible form wrapper */
+    .register-form-wrap {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.4s ease;
+    }
+    .register-form-wrap.expanded {
+      max-height: 400px;
     }
 
     .form-group {
@@ -444,29 +487,33 @@
   <!-- ===== REGISTER PANEL ===== -->
   <aside class="register-panel">
     <div class="register-card">
-      <h2>✏️ 登记积分</h2>
+      <button class="btn-toggle" id="btnToggle">
+        ✏️ 登记积分 <span class="arrow">▼</span>
+      </button>
 
-      <div class="form-group">
-        <label class="form-label" for="inputName">昵称</label>
-        <input class="form-input" id="inputName" type="text"
-               placeholder="输入昵称" autocomplete="off" />
-        <div class="autocomplete-list" id="autocompleteList"></div>
+      <div class="register-form-wrap" id="registerFormWrap">
+        <div class="form-group" style="margin-top:16px;">
+          <label class="form-label" for="inputName">昵称</label>
+          <input class="form-input" id="inputName" type="text"
+                 placeholder="输入昵称" autocomplete="off" />
+          <div class="autocomplete-list" id="autocompleteList"></div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="inputScore">积分</label>
+          <input class="form-input" id="inputScore" type="number"
+                 placeholder="输入本次积分" min="1" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="inputCode">确认码</label>
+          <input class="form-input" id="inputCode" type="password"
+                 placeholder="请输入确认码" maxlength="10" />
+        </div>
+
+        <button class="btn-submit" id="btnSubmit">确认登记</button>
+        <button class="btn-reset" id="btnReset">⚠ 积分清零</button>
       </div>
-
-      <div class="form-group">
-        <label class="form-label" for="inputScore">积分</label>
-        <input class="form-input" id="inputScore" type="number"
-               placeholder="输入本次积分" min="1" />
-      </div>
-
-      <div class="form-group">
-        <label class="form-label" for="inputCode">确认码</label>
-        <input class="form-input" id="inputCode" type="password"
-               placeholder="请输入确认码" maxlength="10" />
-      </div>
-
-      <button class="btn-submit" id="btnSubmit">确认登记</button>
-      <button class="btn-reset" id="btnReset">⚠ 积分清零</button>
     </div>
   </aside>
 
@@ -623,6 +670,12 @@
       document.getElementById('inputCode').value  = '';
       hideAutocomplete();
 
+      // Collapse form after submit
+      formExpanded = false;
+      formWrap.classList.remove('expanded');
+      btnToggle.classList.remove('expanded');
+      btnToggle.innerHTML = '✏️ 登记积分 <span class="arrow">▼</span>';
+
       showToast(isNew
         ? `🎉 ${name} 登记成功，积分 ${formatScore(score)}！`
         : `✅ ${name} 积分 +${formatScore(score)}，累计 ${formatScore(newTotal)}`, 'success');
@@ -700,6 +753,25 @@
     acList.innerHTML = '';
     acActive = -1;
   }
+
+  // ===== Toggle form =====
+  const btnToggle = document.getElementById('btnToggle');
+  const formWrap  = document.getElementById('registerFormWrap');
+  let formExpanded = false;
+
+  btnToggle.addEventListener('click', () => {
+    formExpanded = !formExpanded;
+    if (formExpanded) {
+      formWrap.classList.add('expanded');
+      btnToggle.classList.add('expanded');
+      btnToggle.innerHTML = '✏️ 收起面板 <span class="arrow">▼</span>';
+      setTimeout(() => document.getElementById('inputName').focus(), 350);
+    } else {
+      formWrap.classList.remove('expanded');
+      btnToggle.classList.remove('expanded');
+      btnToggle.innerHTML = '✏️ 登记积分 <span class="arrow">▼</span>';
+    }
+  });
 
   // ===== Toast =====
   let toastTimer;
