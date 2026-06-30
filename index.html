@@ -490,22 +490,34 @@
   </div>
 </div>
 
-<script>
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js';
+  import { getDatabase, ref, get, set, remove, update, onValue, off } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js';
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyA0pI0w6u-tpMPV67UDA1imrfA5dQUl4d0",
+    authDomain: "scoreboard-aad7b.firebaseapp.com",
+    databaseURL: "https://scoreboard-aad7b-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "scoreboard-aad7b",
+    storageBucket: "scoreboard-aad7b.firebasestorage.app",
+    messagingSenderId: "188366839546",
+    appId: "1:188366839546:web:b7715edef796ff9dfaf343"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+
   // ===== Data =====
   const CONFIRM_CODE = '000888';
   const MAX_RANK = 20;
-  const STORE_KEY = 'scoreboard_v1';
 
-  function loadData() {
-    try {
-      return JSON.parse(localStorage.getItem(STORE_KEY)) || {};
-    } catch { return {}; }
-  }
-  function saveData(data) {
-    localStorage.setItem(STORE_KEY, JSON.stringify(data));
-  }
+  let scores = {};      // { nickname: totalScore }
+  let submitting = false;
 
-  let scores = loadData(); // { nickname: totalScore }
+  // Firebase key encoding (keys can't contain . # $ [ ])
+  function encodeKey(name) { return encodeURIComponent(name); }
+  function decodeKey(key) { return decodeURIComponent(key); }
 
   // ===== Render =====
   const medals = ['🥇', '🥈', '🥉'];
@@ -536,16 +548,14 @@
     list.innerHTML = sorted.map(([name, score], i) => {
       const rank = i + 1;
       const rankClass = rank <= 3 ? `rank-${rank}` : '';
-      const rankDisplay = rank <= 3
-        ? `<span class="rank-medal">${medals[i]}</span>`
-        : `<span class="rank-num others">${rank}</span>`;
       const barWidth = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
       const isNew = name === highlightName ? ' new-entry' : '';
 
       return `
-        <li class="board-item ${rankClass}${isNew}" data-name="${name}">
-          <span class="rank-num ${rank <= 3 ? '' : 'others'}">${rank <= 3 ? '' : rank}</span>
-          ${rank <= 3 ? `<span class="rank-medal">${medals[i]}</span>` : ''}
+        <li class="board-item ${rankClass}${isNew}" data-name="${escHtml(name)}">
+          ${rank <= 3
+            ? `<span class="rank-medal">${medals[i]}</span>`
+            : `<span class="rank-num others">${rank}</span>`}
           <div class="rank-info">
             <div class="rank-name">${escHtml(name)}</div>
             <div class="rank-bar-wrap">
@@ -567,8 +577,31 @@
     document.getElementById('statTop').textContent = sorted.length > 0 ? formatScore(sorted[0][1]) : '—';
   }
 
+  // ===== Firebase operations =====
+  async function fetchScores() {
+    try {
+      const snap = await get(ref(db, 'scores'));
+      return snap.exists() ? snap.val() : {};
+    } catch (e) {
+      console.error('Firebase read error:', e);
+      return {};
+    }
+  }
+
+  async function saveScore(name, newTotal) {
+    await set(ref(db, 'scores/' + encodeKey(name)), newTotal);
+  }
+
+  function listenScores() {
+    onValue(ref(db, 'scores'), (snap) => {
+      scores = snap.exists() ? snap.val() : {};
+      renderBoard();
+    });
+  }
+
   // ===== Submit =====
-  document.getElementById('btnSubmit').addEventListener('click', () => {
+  document.getElementById('btnSubmit').addEventListener('click', async () => {
+    if (submitting) return;
     const name  = document.getElementById('inputName').value.trim();
     const score = parseInt(document.getElementById('inputScore').value.trim(), 10);
     const code  = document.getElementById('inputCode').value.trim();
@@ -577,19 +610,28 @@
     if (!score || score <= 0) return showToast('积分需大于 0', 'error');
     if (code !== CONFIRM_CODE) return showToast('确认码错误', 'error');
 
-    const isNew = !scores[name];
-    scores[name] = (scores[name] || 0) + score;
-    saveData(scores);
+    submitting = true;
+    document.getElementById('btnSubmit').textContent = '提交中...';
 
-    document.getElementById('inputName').value  = '';
-    document.getElementById('inputScore').value = '';
-    document.getElementById('inputCode').value  = '';
-    hideAutocomplete();
+    try {
+      const isNew = !(name in scores);
+      const newTotal = (scores[name] || 0) + score;
+      await saveScore(name, newTotal);
 
-    renderBoard(name);
-    showToast(isNew
-      ? `🎉 ${name} 登记成功，积分 ${formatScore(score)}！`
-      : `✅ ${name} 积分 +${formatScore(score)}，累计 ${formatScore(scores[name])}`, 'success');
+      document.getElementById('inputName').value  = '';
+      document.getElementById('inputScore').value = '';
+      document.getElementById('inputCode').value  = '';
+      hideAutocomplete();
+
+      showToast(isNew
+        ? `🎉 ${name} 登记成功，积分 ${formatScore(score)}！`
+        : `✅ ${name} 积分 +${formatScore(score)}，累计 ${formatScore(newTotal)}`, 'success');
+    } catch (e) {
+      showToast('提交失败，请检查网络', 'error');
+    } finally {
+      submitting = false;
+      document.getElementById('btnSubmit').textContent = '确认登记';
+    }
   });
 
   // ===== Autocomplete =====
@@ -688,18 +730,23 @@
     if (e.target === resetOverlay) resetOverlay.classList.remove('show');
   });
 
-  document.getElementById('btnConfirmReset').addEventListener('click', () => {
+  document.getElementById('btnConfirmReset').addEventListener('click', async () => {
     const code = inputResetCode.value.trim();
     if (code !== CONFIRM_CODE) {
       showToast('确认码错误，清零取消', 'error');
       resetOverlay.classList.remove('show');
       return;
     }
-    scores = {};
-    saveData(scores);
-    renderBoard();
-    resetOverlay.classList.remove('show');
-    showToast('所有积分已清零', 'success');
+    try {
+      await remove(ref(db, 'scores'));
+      scores = {};
+      renderBoard();
+      resetOverlay.classList.remove('show');
+      showToast('所有积分已清零', 'success');
+    } catch (e) {
+      showToast('清零失败，请检查网络', 'error');
+      resetOverlay.classList.remove('show');
+    }
   });
 
   inputResetCode.addEventListener('keydown', e => {
@@ -716,7 +763,18 @@
   }
 
   // ===== Init =====
-  renderBoard();
+  // Load initial data, then start real-time listener
+  (async () => {
+    try {
+      scores = await fetchScores();
+      renderBoard();
+    } catch (e) {
+      console.error('Init error:', e);
+      renderBoard();
+    }
+    // Real-time listener: any device's change is pushed to all connected clients
+    listenScores();
+  })();
 </script>
 </body>
 </html>
